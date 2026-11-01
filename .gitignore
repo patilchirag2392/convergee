@@ -1,0 +1,27 @@
+# --- Dependencies: rebuilt from lockfiles, large, platform-specific ---
+node_modules/
+.venv/
+
+# --- Build output and caches: generated from source ---
+dist/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+coverage/
+*.tsbuildinfo
+
+# --- Secrets and machine-local config ---
+.env
+.env.*
+!.env.example
+
+# --- OS and editor clutter ---
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# --- Logs ---
+*.log
