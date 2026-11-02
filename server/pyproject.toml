@@ -12,6 +12,7 @@ dev = [
     "httpx2>=2.16.0",
     "pytest>=9.2.0",
     "pytest-timeout>=2.4.0",
+    "websockets>=17.4",
 ]
 
 [tool.pytest.ini_options]
