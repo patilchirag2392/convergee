@@ -41,7 +41,7 @@ Lost-update demo (from `server/`, with the server running):
 
 ## Progress
 
-- [ ] Stage 0: last-write-wins baseline, reproduce the lost update
+- [x] Stage 0: last-write-wins baseline, reproduce the lost update
 - [ ] Stage 1: custom sequence CRDT
 - [ ] Stage 2: persistence with PostgreSQL
 - [ ] Stage 3: two instances, Redis pub/sub
