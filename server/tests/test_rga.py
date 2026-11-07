@@ -1,6 +1,6 @@
 import pytest
 
-from app.rga import ROOT, Doc, Id, Insert
+from app.rga import ROOT, Delete, Doc, Id, Insert
 
 
 def test_bigger_counter_wins():
@@ -87,3 +87,27 @@ def test_counter_jumps_to_highest_seen():
     doc = Doc("me")
     doc.apply_insert(ins(7, "s", "a"))
     assert doc.counter == 7
+
+def test_delete_hides_character():
+    doc = Doc("me")
+    for op in abc() + [Delete(Id(2, "s"))]:
+        doc.apply(op)
+    assert doc.text() == "ac"
+
+
+def test_duplicate_delete_is_harmless():
+    doc = Doc("me")
+    for op in abc() + [Delete(Id(2, "s")), Delete(Id(2, "s"))]:
+        doc.apply(op)
+    assert doc.text() == "ac"
+
+
+def test_insert_after_deleted_character():
+    delete_b = Delete(Id(2, "s"))
+    z = ins(4, "bob", "Z", after=Id(2, "s"))  # Bob types Z after b
+    d1, d2 = Doc("alice"), Doc("bob")
+    for op in abc() + [delete_b, z]:
+        d1.apply(op)
+    for op in abc() + [z, delete_b]:
+        d2.apply(op)
+    assert d1.text() == d2.text() == "aZc"

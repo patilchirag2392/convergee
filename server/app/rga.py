@@ -73,6 +73,18 @@ class Doc:
         self.by_id[op.id] = item
         self.counter = max(self.counter, op.id.counter)
 
+    def apply_delete(self, op: Delete) -> None:
+        item = self.by_id.get(op.target)
+        if item is None:
+            raise ValueError("target not here yet")  # later: wait for it
+        item.deleted = True  # hide it, but keep it: others may point at it
+
+    def apply(self, op: Insert | Delete) -> None:
+        if isinstance(op, Insert):
+            self.apply_insert(op)
+        else:
+            self.apply_delete(op)
+
     def _index_after(self, anchor: Id) -> int:
         """List index right after the anchor character (0 for ROOT)."""
         if anchor == ROOT:
