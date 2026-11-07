@@ -161,6 +161,35 @@ export class Doc {
     item.deleted = true; // hide it, but keep it: others may point at it
   }
 
+    /** The user typed `value` at visible position `index` (in real characters). */
+  localInsert(index: number, value: string): Insert {
+    const after = index === 0 ? ROOT : this.visibleId(index - 1);
+    this.counter += 1;
+    const op = makeInsert(makeId(this.counter, this.replica), value, after);
+    this.apply(op);
+    return op; // the caller sends this to everyone else
+  }
+
+  /** The user deleted the character at visible position `index`. */
+  localDelete(index: number): Delete {
+    const op: Delete = { type: "delete", target: this.visibleId(index) };
+    this.apply(op);
+    return op;
+  }
+
+  private visibleId(index: number): Id {
+    if (index >= 0) {
+      let seen = 0;
+      for (const item of this.items) {
+        if (!item.deleted) {
+          if (seen === index) return item.id;
+          seen++;
+        }
+      }
+    }
+    throw new RangeError("no visible character at that position");
+  }
+
   private indexAfter(anchor: Id): number {
     if (compareIds(anchor, ROOT) === 0) return 0;
     if (!this.byId.has(idKey(anchor))) throw new Error("anchor not here yet");

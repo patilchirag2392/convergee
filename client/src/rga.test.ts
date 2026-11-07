@@ -7,6 +7,7 @@ import {
   makeInsert,
   opFromJson,
   opToJson,
+  Doc,
 } from "./rga";
 
 test("bigger counter wins", () => {
@@ -53,4 +54,74 @@ test.each([[[true, "a"]], [["4", "a"]], [[4.5, "a"]], [[4]], ["4@a"]])(
 
 test("rejects unknown op type", () => {
   expect(() => opFromJson({ type: "move" })).toThrow();
+});
+
+function abcDoc(replica: string): Doc {
+  const s = (n: number) => makeId(n, "s");
+  const doc = new Doc(replica);
+  doc.apply(makeInsert(s(1), "a", ROOT));
+  doc.apply(makeInsert(s(2), "b", s(1)));
+  doc.apply(makeInsert(s(3), "c", s(2)));
+  return doc;
+}
+
+test("demo case 1 now converges", () => {
+  const alice = abcDoc("alice");
+  const bob = abcDoc("bob");
+  const a = alice.localInsert(1, "X");
+  const b = bob.localDelete(2); // Bob deletes "c"
+  alice.apply(b);
+  bob.apply(a);
+  expect(alice.text()).toBe("aXb");
+  expect(bob.text()).toBe("aXb");
+});
+
+test("demo case 2 now converges", () => {
+  const alice = abcDoc("alice");
+  const bob = abcDoc("bob");
+  const a = alice.localInsert(1, "X");
+  const b = bob.localInsert(1, "Y");
+  alice.apply(b);
+  bob.apply(a);
+  expect(alice.text()).toBe("aYXbc");
+  expect(bob.text()).toBe("aYXbc");
+});
+
+test("local typing builds a chain", () => {
+  const doc = new Doc("me");
+  const first = doc.localInsert(0, "h");
+  const second = doc.localInsert(1, "i");
+  expect(doc.text()).toBe("hi");
+  expect(first.id).toEqual(makeId(1, "me"));
+  expect(second.after).toEqual(first.id);
+});
+
+test("local insert counts only visible characters", () => {
+  const doc = abcDoc("me");
+  doc.localDelete(1); // hide "b", text is "ac"
+  doc.localInsert(1, "X"); // between "a" and "c" on screen
+  expect(doc.text()).toBe("aXc");
+});
+
+test("new name beats everything seen", () => {
+  const doc = new Doc("me");
+  doc.apply(makeInsert(makeId(7, "s"), "a", ROOT));
+  expect(doc.localInsert(1, "b").id).toEqual(makeId(8, "me"));
+});
+
+test("positions count an emoji as one character", () => {
+  const doc = new Doc("me");
+  doc.localInsert(0, "😀");
+  doc.localInsert(1, "x"); // position 1 is right after the emoji
+  expect(doc.text()).toBe("😀x");
+});
+
+test("bad positions throw", () => {
+  const doc = new Doc("me");
+  expect(() => doc.localDelete(0)).toThrow(RangeError);
+  expect(() => doc.localInsert(5, "x")).toThrow(RangeError);
+});
+
+test("doc needs a replica name", () => {
+  expect(() => new Doc("")).toThrow();
 });
