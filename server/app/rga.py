@@ -35,3 +35,51 @@ class Insert:
 @dataclass(frozen=True)
 class Delete:
     target: Id  # name of the character to hide
+
+
+@dataclass
+class Item:
+    """One character in the document, including deleted ones."""
+
+    id: Id
+    value: str
+    after: Id  # kept so we can rebuild this insert later (snapshots)
+    deleted: bool = False
+
+
+class Doc:
+    def __init__(self, replica: str) -> None:
+        self.replica = replica
+        self.counter = 0  # highest counter seen so far (Lamport clock)
+        self.items: list[Item] = []  # every character, in document order
+        self.by_id: dict[Id, Item] = {}  # find a character by its name
+
+    def text(self) -> str:
+        return "".join(item.value for item in self.items if not item.deleted)
+
+    def apply_insert(self, op: Insert) -> None:
+        if op.id in self.by_id:
+            return  # already have it: same op arrived twice
+
+        i = self._index_after(op.after)
+
+        # Step past characters that beat us: bigger siblings, and
+        # anything typed after them (those always have bigger ids too).
+        while i < len(self.items) and self.items[i].id > op.id:
+            i += 1
+
+        item = Item(op.id, op.value, op.after)
+        self.items.insert(i, item)
+        self.by_id[op.id] = item
+        self.counter = max(self.counter, op.id.counter)
+
+    def _index_after(self, anchor: Id) -> int:
+        """List index right after the anchor character (0 for ROOT)."""
+        if anchor == ROOT:
+            return 0
+        if anchor not in self.by_id:
+            raise ValueError("anchor not here yet")  # later: wait for it
+        for i, item in enumerate(self.items):
+            if item.id == anchor:
+                return i + 1
+        raise AssertionError("by_id and items disagree")
