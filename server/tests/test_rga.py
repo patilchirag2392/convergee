@@ -1,4 +1,5 @@
 import pytest
+import itertools
 
 from app.rga import ROOT, Delete, Doc, Id, Insert
 
@@ -111,3 +112,32 @@ def test_insert_after_deleted_character():
     for op in abc() + [z, delete_b]:
         d2.apply(op)
     assert d1.text() == d2.text() == "aZc"
+
+def test_insert_before_its_anchor_waits():
+    doc = Doc("me")
+    for op in reversed(abc()):  # c, then b, then a
+        doc.apply(op)
+    assert doc.text() == "abc"
+    assert doc.waiting == {}
+
+
+def test_delete_before_its_insert_waits():
+    doc = Doc("me")
+    for op in [Delete(Id(2, "s"))] + abc():
+        doc.apply(op)
+    assert doc.text() == "ac"
+    assert doc.waiting == {}
+
+
+def test_every_order_gives_the_same_text():
+    ops = abc() + [
+        ins(4, "alice", "X", after=Id(1, "s")),
+        ins(4, "bob", "Y", after=Id(1, "s")),
+        Delete(Id(2, "s")),
+    ]
+    for order in itertools.permutations(ops):  # all 720 orders
+        doc = Doc("me")
+        for op in order:
+            doc.apply(op)
+        assert doc.text() == "aYXc"
+        assert doc.waiting == {}

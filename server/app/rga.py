@@ -53,6 +53,7 @@ class Doc:
         self.counter = 0  # highest counter seen so far (Lamport clock)
         self.items: list[Item] = []  # every character, in document order
         self.by_id: dict[Id, Item] = {}  # find a character by its name
+        self.waiting: dict[Id, list[Insert | Delete]] = {}  # name -> ops waiting for it
 
     def text(self) -> str:
         return "".join(item.value for item in self.items if not item.deleted)
@@ -80,10 +81,26 @@ class Doc:
         item.deleted = True  # hide it, but keep it: others may point at it
 
     def apply(self, op: Insert | Delete) -> None:
-        if isinstance(op, Insert):
-            self.apply_insert(op)
-        else:
-            self.apply_delete(op)
+        queue = [op]
+        while queue:
+            op = queue.pop()
+            need = self._missing(op)
+            if need is not None:
+                self.waiting.setdefault(need, []).append(op)
+                continue
+            if isinstance(op, Insert):
+                self.apply_insert(op)
+                # Anyone waiting for this new character can go now.
+                queue.extend(self.waiting.pop(op.id, []))
+            else:
+                self.apply_delete(op)
+
+    def _missing(self, op: Insert | Delete) -> Id | None:
+        """The name this op needs that we don't have yet, or None if ready."""
+        need = op.after if isinstance(op, Insert) else op.target
+        if need == ROOT or need in self.by_id:
+            return None
+        return need
 
     def _index_after(self, anchor: Id) -> int:
         """List index right after the anchor character (0 for ROOT)."""
