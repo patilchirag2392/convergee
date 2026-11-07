@@ -141,3 +141,66 @@ def test_every_order_gives_the_same_text():
             doc.apply(op)
         assert doc.text() == "aYXc"
         assert doc.waiting == {}
+
+def two_replicas():
+    alice, bob = Doc("alice"), Doc("bob")
+    for op in abc():
+        alice.apply(op)
+        bob.apply(op)
+    return alice, bob
+
+
+def test_demo_case_1_now_converges():
+    alice, bob = two_replicas()
+    a_op = alice.local_insert(1, "X")
+    b_op = bob.local_delete(2)  # Bob deletes "c"
+    alice.apply(b_op)
+    bob.apply(a_op)
+    assert alice.text() == bob.text() == "aXb"
+
+
+def test_demo_case_2_now_converges():
+    alice, bob = two_replicas()
+    a_op = alice.local_insert(1, "X")
+    b_op = bob.local_insert(1, "Y")
+    alice.apply(b_op)
+    bob.apply(a_op)
+    assert alice.text() == bob.text() == "aYXbc"
+
+
+def test_local_typing_builds_a_chain():
+    doc = Doc("me")
+    first = doc.local_insert(0, "h")
+    second = doc.local_insert(1, "i")
+    assert doc.text() == "hi"
+    assert first.id == Id(1, "me")
+    assert second.after == first.id
+
+
+def test_local_insert_counts_only_visible_characters():
+    doc = Doc("me")
+    for op in abc():
+        doc.apply(op)
+    doc.local_delete(1)  # hide "b", text is "ac"
+    doc.local_insert(1, "X")  # between "a" and "c" on screen
+    assert doc.text() == "aXc"
+
+
+def test_new_name_beats_everything_seen():
+    doc = Doc("me")
+    doc.apply(ins(7, "s", "a"))
+    op = doc.local_insert(1, "b")
+    assert op.id == Id(8, "me")
+
+
+def test_bad_positions_raise():
+    doc = Doc("me")
+    with pytest.raises(IndexError):
+        doc.local_delete(0)  # nothing to delete
+    with pytest.raises(IndexError):
+        doc.local_insert(5, "x")  # past the end
+
+
+def test_doc_needs_a_replica_name():
+    with pytest.raises(ValueError):
+        Doc("")

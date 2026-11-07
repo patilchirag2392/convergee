@@ -49,6 +49,8 @@ class Item:
 
 class Doc:
     def __init__(self, replica: str) -> None:
+        if not replica or not replica.isascii():
+            raise ValueError("replica must be a non-empty ASCII name")
         self.replica = replica
         self.counter = 0  # highest counter seen so far (Lamport clock)
         self.items: list[Item] = []  # every character, in document order
@@ -101,6 +103,31 @@ class Doc:
         if need == ROOT or need in self.by_id:
             return None
         return need
+
+    def local_insert(self, index: int, value: str) -> Insert:
+        """The user typed `value` at visible position `index`."""
+        after = ROOT if index == 0 else self._visible_id(index - 1)
+        self.counter += 1
+        op = Insert(Id(self.counter, self.replica), value, after)
+        self.apply(op)
+        return op  # the caller sends this to everyone else
+
+    def local_delete(self, index: int) -> Delete:
+        """The user deleted the character at visible position `index`."""
+        op = Delete(self._visible_id(index))
+        self.apply(op)
+        return op
+
+    def _visible_id(self, index: int) -> Id:
+        """Name of the character the user sees at position `index`."""
+        if index >= 0:
+            seen = 0
+            for item in self.items:
+                if not item.deleted:
+                    if seen == index:
+                        return item.id
+                    seen += 1
+        raise IndexError("no visible character at that position")
 
     def _index_after(self, anchor: Id) -> int:
         """List index right after the anchor character (0 for ROOT)."""
