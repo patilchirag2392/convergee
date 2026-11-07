@@ -1,7 +1,8 @@
 import pytest
 import itertools
+import json
 
-from app.rga import ROOT, Delete, Doc, Id, Insert
+from app.rga import ROOT, Delete, Doc, Id, Insert, op_from_json, op_to_json
 
 
 def test_bigger_counter_wins():
@@ -204,3 +205,36 @@ def test_bad_positions_raise():
 def test_doc_needs_a_replica_name():
     with pytest.raises(ValueError):
         Doc("")
+
+def test_insert_json_shape():
+    op = ins(4, "alice", "X", after=Id(1, "s"))
+    assert op_to_json(op) == {
+        "type": "insert",
+        "id": [4, "alice"],
+        "value": "X",
+        "after": [1, "s"],
+    }
+
+def test_delete_json_shape():
+    assert op_to_json(Delete(Id(2, "s"))) == {"type": "delete", "target": [2, "s"]}
+
+
+def test_root_json_shape():
+    assert op_to_json(ins(1, "s", "a"))["after"] == [0, ""]
+
+
+def test_ops_survive_a_round_trip():
+    for op in abc() + [Delete(Id(2, "s"))]:
+        text = json.dumps(op_to_json(op))
+        assert op_from_json(json.loads(text)) == op
+
+
+@pytest.mark.parametrize("bad", [[True, "a"], ["4", "a"], [4.0, "a"], [4], "4@a"])
+def test_bad_ids_are_rejected(bad):
+    with pytest.raises(ValueError):
+        op_from_json({"type": "delete", "target": bad})
+
+
+def test_unknown_op_type_is_rejected():
+    with pytest.raises(ValueError):
+        op_from_json({"type": "move"})

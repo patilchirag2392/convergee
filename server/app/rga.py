@@ -139,3 +139,36 @@ class Doc:
             if item.id == anchor:
                 return i + 1
         raise AssertionError("by_id and items disagree")
+
+def op_to_json(op: Insert | Delete) -> dict:
+    if isinstance(op, Insert):
+        return {
+            "type": "insert",
+            "id": _id_to_json(op.id),
+            "value": op.value,
+            "after": _id_to_json(op.after),
+        }
+    return {"type": "delete", "target": _id_to_json(op.target)}
+
+
+def op_from_json(data: dict) -> Insert | Delete:
+    if data["type"] == "insert":
+        return Insert(
+            _id_from_json(data["id"]), data["value"], _id_from_json(data["after"])
+        )
+    if data["type"] == "delete":
+        return Delete(_id_from_json(data["target"]))
+    raise ValueError(f"unknown op type: {data['type']!r}")
+
+
+def _id_to_json(name: Id) -> list:
+    return [name.counter, name.replica]
+
+
+def _id_from_json(data) -> Id:
+    if not (isinstance(data, list) and len(data) == 2):
+        raise ValueError("id must be [counter, replica]")
+    counter, replica = data
+    if type(counter) is not int or type(replica) is not str:
+        raise ValueError("id must be [int, str]")
+    return Id(counter, replica)
