@@ -1,0 +1,130 @@
+{
+  "about": "Shared RGA cases. Python and TypeScript apply each case's ops in order and in reverse. Both orders must produce `text`.",
+  "cases": [
+    {
+      "name": "typing forward",
+      "ops": [
+        {"type": "insert", "id": [1, "s"], "value": "a", "after": [0, ""]},
+        {"type": "insert", "id": [2, "s"], "value": "b", "after": [1, "s"]},
+        {"type": "insert", "id": [3, "s"], "value": "c", "after": [2, "s"]}
+      ],
+      "text": "abc"
+    },
+    {
+      "name": "newer insert at start goes first",
+      "ops": [
+        {"type": "insert", "id": [1, "s"], "value": "b", "after": [0, ""]},
+        {"type": "insert", "id": [2, "s"], "value": "a", "after": [0, ""]}
+      ],
+      "text": "ab"
+    },
+    {
+      "name": "same spot: bigger name goes first",
+      "ops": [
+        {"type": "insert", "id": [1, "s"], "value": "a", "after": [0, ""]},
+        {"type": "insert", "id": [2, "s"], "value": "b", "after": [1, "s"]},
+        {"type": "insert", "id": [3, "s"], "value": "c", "after": [2, "s"]},
+        {"type": "insert", "id": [4, "alice"], "value": "X", "after": [1, "s"]},
+        {"type": "insert", "id": [4, "bob"], "value": "Y", "after": [1, "s"]}
+      ],
+      "text": "aYXbc"
+    },
+    {
+      "name": "a typed word stays together",
+      "ops": [
+        {"type": "insert", "id": [1, "s"], "value": "a", "after": [0, ""]},
+        {"type": "insert", "id": [2, "s"], "value": "b", "after": [1, "s"]},
+        {"type": "insert", "id": [3, "s"], "value": "c", "after": [2, "s"]},
+        {"type": "insert", "id": [4, "alice"], "value": "X", "after": [1, "s"]},
+        {"type": "insert", "id": [4, "bob"], "value": "Y", "after": [1, "s"]},
+        {"type": "insert", "id": [5, "bob"], "value": "Z", "after": [4, "bob"]}
+      ],
+      "text": "aYZXbc"
+    },
+    {
+      "name": "counter beats name",
+      "ops": [
+        {"type": "insert", "id": [1, "s"], "value": "a", "after": [0, ""]},
+        {"type": "insert", "id": [2, "s"], "value": "b", "after": [1, "s"]},
+        {"type": "insert", "id": [3, "s"], "value": "c", "after": [2, "s"]},
+        {"type": "insert", "id": [5, "alice"], "value": "X", "after": [1, "s"]},
+        {"type": "insert", "id": [4, "zed"], "value": "Y", "after": [1, "s"]}
+      ],
+      "text": "aXYbc"
+    },
+    {
+      "name": "names compare as text, not numbers",
+      "ops": [
+        {"type": "insert", "id": [1, "s"], "value": "a", "after": [0, ""]},
+        {"type": "insert", "id": [2, "s"], "value": "b", "after": [1, "s"]},
+        {"type": "insert", "id": [3, "s"], "value": "c", "after": [2, "s"]},
+        {"type": "insert", "id": [4, "r10"], "value": "P", "after": [1, "s"]},
+        {"type": "insert", "id": [4, "r9"], "value": "Q", "after": [1, "s"]}
+      ],
+      "text": "aQPbc"
+    },
+    {
+      "name": "uppercase sorts before lowercase",
+      "ops": [
+        {"type": "insert", "id": [1, "s"], "value": "a", "after": [0, ""]},
+        {"type": "insert", "id": [2, "s"], "value": "b", "after": [1, "s"]},
+        {"type": "insert", "id": [3, "s"], "value": "c", "after": [2, "s"]},
+        {"type": "insert", "id": [4, "Bob"], "value": "B", "after": [1, "s"]},
+        {"type": "insert", "id": [4, "alice"], "value": "A", "after": [1, "s"]}
+      ],
+      "text": "aABbc"
+    },
+    {
+      "name": "duplicate insert is ignored",
+      "ops": [
+        {"type": "insert", "id": [1, "s"], "value": "a", "after": [0, ""]},
+        {"type": "insert", "id": [1, "s"], "value": "a", "after": [0, ""]}
+      ],
+      "text": "a"
+    },
+    {
+      "name": "delete hides a character",
+      "ops": [
+        {"type": "insert", "id": [1, "s"], "value": "a", "after": [0, ""]},
+        {"type": "insert", "id": [2, "s"], "value": "b", "after": [1, "s"]},
+        {"type": "insert", "id": [3, "s"], "value": "c", "after": [2, "s"]},
+        {"type": "delete", "target": [2, "s"]}
+      ],
+      "text": "ac"
+    },
+    {
+      "name": "duplicate delete is harmless",
+      "ops": [
+        {"type": "insert", "id": [1, "s"], "value": "a", "after": [0, ""]},
+        {"type": "insert", "id": [2, "s"], "value": "b", "after": [1, "s"]},
+        {"type": "insert", "id": [3, "s"], "value": "c", "after": [2, "s"]},
+        {"type": "delete", "target": [2, "s"]},
+        {"type": "delete", "target": [2, "s"]}
+      ],
+      "text": "ac"
+    },
+    {
+      "name": "insert after a deleted character",
+      "ops": [
+        {"type": "insert", "id": [1, "s"], "value": "a", "after": [0, ""]},
+        {"type": "insert", "id": [2, "s"], "value": "b", "after": [1, "s"]},
+        {"type": "insert", "id": [3, "s"], "value": "c", "after": [2, "s"]},
+        {"type": "delete", "target": [2, "s"]},
+        {"type": "insert", "id": [4, "bob"], "value": "Z", "after": [2, "s"]}
+      ],
+      "text": "aZc"
+    },
+    {
+      "name": "delete everything",
+      "ops": [
+        {"type": "insert", "id": [1, "s"], "value": "a", "after": [0, ""]},
+        {"type": "insert", "id": [2, "s"], "value": "b", "after": [1, "s"]},
+        {"type": "insert", "id": [3, "s"], "value": "c", "after": [2, "s"]},
+        {"type": "delete", "target": [1, "s"]},
+        {"type": "delete", "target": [2, "s"]},
+        {"type": "delete", "target": [3, "s"]}
+      ],
+      "text": ""
+    }
+  ]
+}
