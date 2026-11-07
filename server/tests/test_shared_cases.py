@@ -5,13 +5,20 @@ import pytest
 
 from app.rga import Doc, op_from_json
 
-# server/tests/this_file.py -> up two folders is the repo root
-CASES_FILE = Path(__file__).resolve().parents[2] / "shared" / "rga-cases.json"
-CASES = json.loads(CASES_FILE.read_text())["cases"]
+SHARED = Path(__file__).resolve().parents[2] / "shared"
 
 
-def test_cases_file_is_not_empty():
-    assert CASES
+def load(file_name: str) -> list:
+    return json.loads((SHARED / file_name).read_text())["cases"]
+
+
+HAND = load("rga-cases.json")
+RANDOM = load("rga-random.json")
+CASES = HAND + RANDOM
+
+
+def test_case_files_are_not_empty():
+    assert HAND and RANDOM
 
 
 @pytest.mark.parametrize("case", CASES, ids=[c["name"] for c in CASES])
