@@ -83,3 +83,93 @@ function idFromJson(data: unknown): Id {
   }
   return makeId(counter, replica);
 }
+
+type Item = {
+  readonly id: Id;
+  readonly value: string;
+  readonly after: Id; // kept so we can rebuild this insert later
+  deleted: boolean;
+};
+
+export class Doc {
+  readonly replica: string;
+  counter = 0; // highest counter seen so far (Lamport clock)
+  readonly items: Item[] = []; // every character, in document order
+  readonly byId = new Map<string, Item>(); // idKey -> character
+  readonly waiting = new Map<string, Op[]>(); // idKey -> ops waiting for it
+
+  constructor(replica: string) {
+    if (!replica || !/^[\x00-\x7f]*$/.test(replica)) {
+      throw new Error("replica must be a non-empty ASCII name");
+    }
+    this.replica = replica;
+  }
+
+  text(): string {
+    return this.items
+      .filter((item) => !item.deleted)
+      .map((item) => item.value)
+      .join("");
+  }
+
+  apply(op: Op): void {
+    const queue: Op[] = [op];
+    while (queue.length > 0) {
+      const next = queue.pop() as Op;
+      const need = this.missing(next);
+      if (need !== null) {
+        const key = idKey(need);
+        const list = this.waiting.get(key);
+        if (list) list.push(next);
+        else this.waiting.set(key, [next]);
+        continue;
+      }
+      if (next.type === "insert") {
+        this.applyInsert(next);
+        // Anyone waiting for this new character can go now.
+        const key = idKey(next.id);
+        const woken = this.waiting.get(key);
+        if (woken) {
+          this.waiting.delete(key);
+          queue.push(...woken);
+        }
+      } else {
+        this.applyDelete(next);
+      }
+    }
+  }
+
+  applyInsert(op: Insert): void {
+    if (this.byId.has(idKey(op.id))) return; // same op arrived twice
+
+    let i = this.indexAfter(op.after);
+    // Step past characters that beat us: bigger siblings, and
+    // anything typed after them (those always have bigger ids too).
+    while (i < this.items.length && compareIds(this.items[i].id, op.id) > 0) {
+      i++;
+    }
+
+    const item: Item = { id: op.id, value: op.value, after: op.after, deleted: false };
+    this.items.splice(i, 0, item);
+    this.byId.set(idKey(op.id), item);
+    this.counter = Math.max(this.counter, op.id.counter);
+  }
+
+  applyDelete(op: Delete): void {
+    const item = this.byId.get(idKey(op.target));
+    if (!item) throw new Error("target not here yet");
+    item.deleted = true; // hide it, but keep it: others may point at it
+  }
+
+  private indexAfter(anchor: Id): number {
+    if (compareIds(anchor, ROOT) === 0) return 0;
+    if (!this.byId.has(idKey(anchor))) throw new Error("anchor not here yet");
+    return this.items.findIndex((item) => compareIds(item.id, anchor) === 0) + 1;
+  }
+
+  private missing(op: Op): Id | null {
+    const need = op.type === "insert" ? op.after : op.target;
+    if (compareIds(need, ROOT) === 0 || this.byId.has(idKey(need))) return null;
+    return need;
+  }
+}
