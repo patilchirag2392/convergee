@@ -1,56 +1,96 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Doc, opFromJson, opToJson, type Op } from "./rga";
+import { diffText } from "./textDiff";
 
-const SERVER = "ws://localhost:8000/ws";
+const SERVER = "ws://localhost:8000";
 
-// localhost:5173/notes  ->  document "notes"
-const docId = window.location.pathname.slice(1) || "default";
+type Status = "connecting" | "live" | "disconnected";
+
+/** JS string units -> real characters. */
+function toChars(text: string, units: number): number {
+  return Array.from(text.slice(0, units)).length;
+}
+
+/** Real characters -> JS string units. */
+function toUnits(text: string, chars: number): number {
+  return Array.from(text).slice(0, chars).join("").length;
+}
+
+/** Apply ops from others, keeping this tab's cursor where it was. */
+function applyRemote(el: HTMLTextAreaElement, doc: Doc, ops: Op[]): void {
+  // Remember the cursor by the names of the characters to its left.
+  const startMark = doc.idBefore(toChars(el.value, el.selectionStart));
+  const endMark = doc.idBefore(toChars(el.value, el.selectionEnd));
+  for (const op of ops) doc.apply(op);
+  el.value = doc.text();
+  if (document.activeElement === el) {
+    el.setSelectionRange(
+      toUnits(el.value, doc.positionAfter(startMark)),
+      toUnits(el.value, doc.positionAfter(endMark)),
+    );
+  }
+}
 
 export default function App() {
-  const [text, setText] = useState("");
-  const [status, setStatus] = useState("connecting");
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const docRef = useRef<Doc | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const [status, setStatus] = useState<Status>("connecting");
+  const name = window.location.pathname.slice(1) || "default";
 
   useEffect(() => {
-    const socket = new WebSocket(`${SERVER}/${encodeURIComponent(docId)}`);
+    const doc = new Doc(crypto.randomUUID()); // fresh replica name every page load
+    const socket = new WebSocket(`${SERVER}/ws/${encodeURIComponent(name)}`);
+    docRef.current = doc;
     socketRef.current = socket;
 
-    socket.onopen = () => setStatus("connected");
-    socket.onclose = () => setStatus("disconnected");
     socket.onmessage = (event) => {
       const message = JSON.parse(event.data);
-      // Snapshot or update: either way, the server's text replaces ours.
-      setText(message.text);
+      if (message.type === "error") {
+        console.warn("server rejected an edit:", message.message);
+        return;
+      }
+      const el = textarea.current;
+      if (!el || (message.type !== "snapshot" && message.type !== "ops")) return;
+      applyRemote(el, doc, message.ops.map(opFromJson));
+      if (message.type === "snapshot") setStatus("live");
     };
+    socket.onclose = () => setStatus("disconnected");
 
     return () => {
-      // Unhook first, so this old socket can't change the page after it's gone.
-      socket.onopen = null;
-      socket.onclose = null;
+      // Detach first, so this old socket can't mark the new one as disconnected.
       socket.onmessage = null;
+      socket.onclose = null;
       socket.close();
     };
-  }, []);
+  }, [name]);
 
-  function handleChange(event: ChangeEvent<HTMLTextAreaElement>) {
-    const newText = event.target.value;
-    setText(newText);
+  function handleInput(): void {
+    const el = textarea.current;
+    const doc = docRef.current;
     const socket = socketRef.current;
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ text: newText }));
-    }
+    if (!el || !doc || !socket) return;
+
+    const edit = diffText(doc.text(), el.value, el.selectionEnd);
+    const ops: Op[] = [];
+    for (let k = 0; k < edit.deleteCount; k++) ops.push(doc.localDelete(edit.index));
+    edit.insert.forEach((char, k) => ops.push(doc.localInsert(edit.index + k, char)));
+
+    if (doc.text() !== el.value) console.error("doc and textarea disagree");
+    if (ops.length > 0) socket.send(JSON.stringify({ type: "ops", ops: ops.map(opToJson) }));
   }
 
   return (
-    <main style={{ maxWidth: 720, margin: "2rem auto", fontFamily: "system-ui" }}>
-      <h1>Converge</h1>
+    <main>
       <p>
-        document: <b>{docId}</b> · {status}
+        Document: <strong>{name}</strong> · {status}
       </p>
       <textarea
-        value={text}
-        onChange={handleChange}
+        ref={textarea}
+        onInput={handleInput}
+        readOnly={status !== "live"}
         rows={20}
-        style={{ width: "100%", fontSize: 16 }}
+        cols={80}
       />
     </main>
   );

@@ -1,40 +1,73 @@
+"""Converge server.
+
+Each document is a room: the server's own RGA replica, plus the tabs
+connected to it. Tabs send ops. The server checks them, applies them to
+its copy, and forwards them to every other tab in the room.
+"""
+
+import json
 from dataclasses import dataclass, field
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
+from app.rga import Delete, Doc, Insert, op_from_json, op_to_json
 
 app = FastAPI()
 
 
 @dataclass
-class Document:
-    text: str = ""
+class Room:
+    doc: Doc = field(default_factory=lambda: Doc("server"))
     clients: set[WebSocket] = field(default_factory=set)
 
 
-# All state lives in this process's memory: gone on restart, invisible to other processes.
-documents: dict[str, Document] = {}
+rooms: dict[str, Room] = {}
+
+
+def parse_ops(text: str) -> list[Insert | Delete]:
+    """Parse a whole message. Anything wrong raises ValueError."""
+    message = json.loads(text)  # bad JSON raises JSONDecodeError, a kind of ValueError
+    if not isinstance(message, dict) or message.get("type") != "ops":
+        raise ValueError('expected {"type": "ops", "ops": [...]}')
+    ops = message.get("ops")
+    if not isinstance(ops, list):
+        raise ValueError('"ops" must be a list')
+    return [op_from_json(op) for op in ops]
 
 
 @app.websocket("/ws/{doc_id}")
 async def edit(websocket: WebSocket, doc_id: str) -> None:
     await websocket.accept()
-    doc = documents.setdefault(doc_id, Document())
-    doc.clients.add(websocket)
+    room = rooms.get(doc_id)
+    if room is None:
+        room = rooms[doc_id] = Room()
+
+    # No await between taking the snapshot and joining the room,
+    # so no op can land in the gap and be missed by this tab.
+    snapshot = [op_to_json(op) for op in room.doc.snapshot_ops()]
+    room.clients.add(websocket)
+
     try:
-        await websocket.send_json({"type": "snapshot", "text": doc.text})
+        await websocket.send_json({"type": "snapshot", "ops": snapshot})
         while True:
-            message = await websocket.receive_json()
-            text = message["text"]
-            doc.text = text  # last write wins: whatever arrives last overwrites everything
-            for client in list(doc.clients):
-                if client is websocket:
-                    continue
-                try:
-                    await client.send_json({"type": "update", "text": text})
-                except Exception:
-                    # That peer is gone. Drop it, but don't let its failure end this sender's loop.
-                    doc.clients.discard(client)
+            text = await websocket.receive_text()
+            try:
+                ops = parse_ops(text)
+            except ValueError as error:
+                await websocket.send_json({"type": "error", "message": str(error)})
+                continue
+
+            for op in ops:
+                room.doc.apply(op)
+
+            out = {"type": "ops", "ops": [op_to_json(op) for op in ops]}
+            for other in list(room.clients):
+                if other is not websocket:
+                    try:
+                        await other.send_json(out)
+                    except Exception:
+                        room.clients.discard(other)  # that tab is already gone
     except WebSocketDisconnect:
         pass
     finally:
-        doc.clients.discard(websocket)
+        room.clients.discard(websocket)
