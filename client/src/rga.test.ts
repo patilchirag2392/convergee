@@ -125,3 +125,7 @@ test("bad positions throw", () => {
 test("doc needs a replica name", () => {
   expect(() => new Doc("")).toThrow();
 });
+
+test("new character cannot use counter zero", () => {
+  expect(() => makeInsert(makeId(0, "a"), "x", ROOT)).toThrow();
+});

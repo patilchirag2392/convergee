@@ -41,6 +41,7 @@ export function idKey(id: Id): string {
 }
 
 export function makeInsert(id: Id, value: string, after: Id): Insert {
+  if (id.counter < 1) throw new Error("a new character's counter must be >= 1");
   if ([...value].length !== 1) throw new Error("insert exactly one character");
   return { type: "insert", id, value, after };
 }
