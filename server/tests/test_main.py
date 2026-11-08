@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+from app.rga import Doc, op_from_json, op_to_json
 
 from app.main import app, rooms
 
@@ -77,3 +78,33 @@ def test_one_bad_op_rejects_the_whole_message():
         alice.send_json(ops_message(insert(1, "alice", "a"), {"type": "insert"}))
         assert alice.receive_json()["type"] == "error"
         assert rooms["notes"].doc.text() == ""  # the good op wasn't applied either
+
+def receive_into(ws, doc):
+    """Apply every op in the next message (snapshot or ops) to a local Doc."""
+    for op in ws.receive_json()["ops"]:
+        doc.apply(op_from_json(op))
+
+
+def send_ops(ws, ops):
+    ws.send_json(ops_message(*[op_to_json(op) for op in ops]))
+
+
+def test_concurrent_edits_through_the_server_converge():
+    with client.websocket_connect("/ws/notes") as alice_ws, client.websocket_connect(
+        "/ws/notes"
+    ) as bob_ws:
+        alice, bob = Doc("alice"), Doc("bob")
+        receive_into(alice_ws, alice)  # snapshots
+        receive_into(bob_ws, bob)
+
+        # Alice types "abc", and Bob receives it.
+        send_ops(alice_ws, [alice.local_insert(i, ch) for i, ch in enumerate("abc")])
+        receive_into(bob_ws, bob)
+
+        # Now both edit at once, before seeing each other's edit.
+        send_ops(alice_ws, [alice.local_insert(1, "X")])  # "aXbc"
+        send_ops(bob_ws, [bob.local_delete(2), bob.local_insert(1, "Y")])  # "aYb"
+        receive_into(alice_ws, alice)
+        receive_into(bob_ws, bob)
+
+        assert alice.text() == bob.text() == rooms["notes"].doc.text() == "aYXb"
