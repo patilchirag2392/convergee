@@ -164,7 +164,7 @@ export class Doc {
 
     /** The user typed `value` at visible position `index` (in real characters). */
   localInsert(index: number, value: string): Insert {
-    const after = index === 0 ? ROOT : this.visibleId(index - 1);
+    const after = this.idBefore(index);
     this.counter += 1;
     const op = makeInsert(makeId(this.counter, this.replica), value, after);
     this.apply(op);
@@ -176,6 +176,22 @@ export class Doc {
     const op: Delete = { type: "delete", target: this.visibleId(index) };
     this.apply(op);
     return op;
+  }
+
+    /** Name of the character just left of visible position `index` (ROOT at the start). */
+  idBefore(index: number): Id {
+    return index === 0 ? ROOT : this.visibleId(index - 1);
+  }
+
+  /** Visible position right after this character. If it's deleted, where it used to be. */
+  positionAfter(id: Id): number {
+    if (compareIds(id, ROOT) === 0) return 0;
+    let visible = 0;
+    for (const item of this.items) {
+      if (!item.deleted) visible++;
+      if (compareIds(item.id, id) === 0) return visible;
+    }
+    throw new Error("unknown character");
   }
 
   private visibleId(index: number): Id {

@@ -129,3 +129,38 @@ test("doc needs a replica name", () => {
 test("new character cannot use counter zero", () => {
   expect(() => makeInsert(makeId(0, "a"), "x", ROOT)).toThrow();
 });
+
+test("remote insert before the cursor pushes it right", () => {
+  const doc = abcDoc("me");
+  const mark = doc.idBefore(2); // cursor between "b" and "c"
+  doc.apply(makeInsert(makeId(4, "bob"), "X", makeId(1, "s"))); // "aXbc"
+  expect(doc.positionAfter(mark)).toBe(3);
+});
+
+test("remote insert after the cursor leaves it alone", () => {
+  const doc = abcDoc("me");
+  const mark = doc.idBefore(1); // cursor between "a" and "b"
+  doc.apply(makeInsert(makeId(4, "bob"), "Y", makeId(2, "s"))); // "abYc"
+  expect(doc.positionAfter(mark)).toBe(1);
+});
+
+test("remote insert right at the cursor goes after it", () => {
+  const doc = abcDoc("me");
+  const mark = doc.idBefore(1); // cursor right after "a"
+  doc.apply(makeInsert(makeId(4, "bob"), "X", makeId(1, "s"))); // "aXbc"
+  expect(doc.positionAfter(mark)).toBe(1); // still right after "a"
+});
+
+test("if the character left of the cursor is deleted, the cursor stays put", () => {
+  const doc = abcDoc("me");
+  const mark = doc.idBefore(2); // cursor right after "b"
+  doc.apply({ type: "delete", target: makeId(2, "s") }); // "ac"
+  expect(doc.positionAfter(mark)).toBe(1); // between "a" and "c"
+});
+
+test("cursor at the very start stays at the start", () => {
+  const doc = abcDoc("me");
+  const mark = doc.idBefore(0);
+  doc.apply(makeInsert(makeId(4, "bob"), "X", makeId(3, "s"))); // "abcX"
+  expect(doc.positionAfter(mark)).toBe(0);
+});
