@@ -238,3 +238,52 @@ def test_bad_ids_are_rejected(bad):
 def test_unknown_op_type_is_rejected():
     with pytest.raises(ValueError):
         op_from_json({"type": "move"})
+
+def test_counter_limit_matches_javascript():
+    Id(2**53 - 1, "a")  # biggest allowed: fine
+    with pytest.raises(ValueError):
+        Id(2**53, "a")
+
+
+def test_new_character_cannot_use_counter_zero():
+    with pytest.raises(ValueError):
+        Insert(Id(0, "a"), "x", ROOT)
+
+
+@pytest.mark.parametrize(
+    "junk",
+    [
+        None,
+        [],
+        {"type": "insert"},
+        {"type": "insert", "id": [1, "a"], "value": 5, "after": [0, ""]},
+        {"type": "delete"},
+    ],
+)
+def test_junk_ops_raise_value_error(junk):
+    with pytest.raises(ValueError):
+        op_from_json(junk)
+
+
+def test_snapshot_rebuilds_the_doc():
+    doc = Doc("server")
+    for op in abc() + [Delete(Id(2, "s")), ins(4, "bob", "X", after=Id(1, "s"))]:
+        doc.apply(op)
+    fresh = Doc("new-tab")
+    for op in doc.snapshot_ops():
+        fresh.apply(op)
+        assert fresh.waiting == {}  # nothing in a snapshot has to wait
+    assert fresh.text() == doc.text() == "aXc"
+    assert [(i.id, i.deleted) for i in fresh.items] == [
+        (i.id, i.deleted) for i in doc.items
+    ]
+
+
+def test_snapshot_includes_waiting_ops():
+    doc = Doc("server")
+    doc.apply(ins(2, "s", "b", after=Id(1, "s")))  # "a" hasn't arrived
+    fresh = Doc("new-tab")
+    for op in doc.snapshot_ops():
+        fresh.apply(op)
+    fresh.apply(ins(1, "s", "a"))
+    assert fresh.text() == "ab"

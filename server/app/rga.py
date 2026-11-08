@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+MAX_COUNTER = 2**53 - 1  # biggest whole number JavaScript stores exactly
 
 @dataclass(frozen=True, order=True)
 class Id:
@@ -11,8 +12,8 @@ class Id:
     replica: str
 
     def __post_init__(self) -> None:
-        if self.counter < 0:
-            raise ValueError("counter must be >= 0")
+        if not 0 <= self.counter <= MAX_COUNTER:
+            raise ValueError("counter must be between 0 and 2**53 - 1")
         if not self.replica.isascii():
             raise ValueError("replica must be ASCII")
 
@@ -28,6 +29,8 @@ class Insert:
     after: Id  # put it right after this one (ROOT = at the start)
 
     def __post_init__(self) -> None:
+        if self.id.counter < 1:
+            raise ValueError("a new character's counter must be >= 1")
         if len(self.value) != 1:
             raise ValueError("insert exactly one character")
 
@@ -59,6 +62,14 @@ class Doc:
 
     def text(self) -> str:
         return "".join(item.value for item in self.items if not item.deleted)
+
+    def snapshot_ops(self) -> list[Insert | Delete]:
+        """Ops that rebuild this doc on a fresh replica."""
+        ops: list[Insert | Delete] = [Insert(i.id, i.value, i.after) for i in self.items]
+        ops += [Delete(i.id) for i in self.items if i.deleted]
+        for waiting_ops in self.waiting.values():
+            ops += waiting_ops
+        return ops
 
     def apply_insert(self, op: Insert) -> None:
         if op.id in self.by_id:
@@ -151,14 +162,19 @@ def op_to_json(op: Insert | Delete) -> dict:
     return {"type": "delete", "target": _id_to_json(op.target)}
 
 
-def op_from_json(data: dict) -> Insert | Delete:
-    if data["type"] == "insert":
-        return Insert(
-            _id_from_json(data["id"]), data["value"], _id_from_json(data["after"])
-        )
-    if data["type"] == "delete":
-        return Delete(_id_from_json(data["target"]))
-    raise ValueError(f"unknown op type: {data['type']!r}")
+def op_from_json(data) -> Insert | Delete:
+    """Parse one op. Anything malformed raises ValueError, nothing else."""
+    if not isinstance(data, dict):
+        raise ValueError("op must be a JSON object")
+    kind = data.get("type")
+    if kind == "insert":
+        value = data.get("value")
+        if not isinstance(value, str):
+            raise ValueError("value must be a string")
+        return Insert(_id_from_json(data.get("id")), value, _id_from_json(data.get("after")))
+    if kind == "delete":
+        return Delete(_id_from_json(data.get("target")))
+    raise ValueError(f"unknown op type: {kind!r}")
 
 
 def _id_to_json(name: Id) -> list:
